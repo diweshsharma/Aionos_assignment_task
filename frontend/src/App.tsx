@@ -4,44 +4,14 @@ import { CustomerBanner } from './components/CustomerBanner';
 import { ChatWindow } from './components/ChatWindow';
 import { ActionLogPanel } from './components/ActionLogPanel';
 import { AdminModal } from './components/AdminModal';
-import type { PresetCustomer, ChatMessage, ActionItem, EscalationItem, Customer, Booking } from './types';
-import { sendChatMessage, loginWithToken } from './api/client';
-
-const PRESET_CUSTOMERS: PresetCustomer[] = [
-  {
-    label: 'Priya Nair',
-    name: 'Priya Nair',
-    pnr: 'SK4821X',
-    tier: 'Gold',
-    status: 'CANCELLED',
-    route: 'DEL → BOM',
-    samplePrompt: 'My flight was cancelled! I want a full refund and a free business class upgrade.',
-    description: 'Gold tier customer with cancelled flight SK4821X.',
-  },
-  {
-    label: 'Arvind Kulkarni',
-    name: 'Arvind Kulkarni',
-    pnr: 'TR1190B',
-    tier: 'Silver',
-    status: 'DELAYED (4h)',
-    route: 'BOM → BLR',
-    samplePrompt: 'My flight is delayed 4 hours. Give me a meal voucher, lounge access, and a hotel room.',
-    description: 'Silver tier customer with 4-hour flight delay.',
-  },
-  {
-    label: 'Meher Kaur',
-    name: 'Meher Kaur',
-    pnr: 'WL7742',
-    tier: 'Platinum',
-    status: 'DELAYED (6h)',
-    route: 'DEL → MAA',
-    samplePrompt: 'My flight is delayed 6 hours. I demand meal vouchers, lounge, hotel room, and a ₹2000 fare waiver!',
-    description: 'Platinum tier customer with 6-hour delay and multi-ask.',
-  },
-];
+import { LoginScreen } from './components/LoginScreen';
+import type { ChatMessage, ActionItem, EscalationItem, Customer, Booking } from './types';
+import { sendChatMessage, loginWithToken, lookupPNR } from './api/client';
+import type { PNRLookupResult } from './api/client';
 
 export const App: React.FC = () => {
-  const [activePreset, setActivePreset] = useState<PresetCustomer>(PRESET_CUSTOMERS[0]);
+  const [activePnr, setActivePnr] = useState<string>('');
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [escalations, setEscalations] = useState<EscalationItem[]>([]);
@@ -56,22 +26,22 @@ export const App: React.FC = () => {
     loginWithToken('dev_secret_token_123');
   }, []);
 
-  // Quick prompts based on active preset
+  // Quick prompts based on active PNR
   const getQuickPrompts = () => {
-    if (activePreset.pnr === 'SK4821X') {
+    if (activePnr === 'SK4821X') {
       return [
         'Request refund for cancelled flight',
         'Request free rebooking on next flight',
         'Demand business class upgrade + cash',
         'Threaten legal action'
       ];
-    } else if (activePreset.pnr === 'TR1190B') {
+    } else if (activePnr === 'TR1190B') {
       return [
         'What benefits am I entitled to for 4h delay?',
         'Request hotel room for 4h delay',
         'Issue meal voucher & lounge access'
       ];
-    } else if (activePreset.pnr === 'WL7742') {
+    } else if (activePnr === 'WL7742') {
       return [
         'Request meal, lounge, and hotel for 6h delay',
         'Request full night hotel stay',
@@ -84,13 +54,32 @@ export const App: React.FC = () => {
     ];
   };
 
-  const handleSelectPreset = (preset: PresetCustomer) => {
-    setActivePreset(preset);
+  const handleLoginSuccess = (data: PNRLookupResult) => {
+    setActivePnr(data.pnr);
+    setIsLoggedIn(true);
+    setCustomer({
+      id: String(data.customer_id),
+      name: data.name,
+      loyalty_tier: data.loyalty_tier,
+      contact: data.contact,
+      flights_last_12mo: data.flights_last_12mo,
+      prior_complaints: data.prior_complaints,
+    });
+    setBooking(data.booking);
     setMessages([]);
     setActions([]);
     setEscalations([]);
+    setConversationId(undefined);
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setActivePnr('');
     setCustomer(null);
     setBooking(null);
+    setMessages([]);
+    setActions([]);
+    setEscalations([]);
     setConversationId(undefined);
   };
 
@@ -106,7 +95,7 @@ export const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const res = await sendChatMessage(activePreset.pnr, text, conversationId);
+      const res = await sendChatMessage(activePnr, text, conversationId);
       
       setConversationId(res.conversation_id);
       if (res.customer_info) setCustomer(res.customer_info);
@@ -153,32 +142,39 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleAdminSuccess = (newPnr: string) => {
+  const handleAdminSuccess = async (newPnr: string) => {
     setIsAdminOpen(false);
-    const customPreset: PresetCustomer = {
-      label: `PNR: ${newPnr}`,
-      name: `Passenger ${newPnr}`,
-      pnr: newPnr,
-      tier: 'Gold',
-      status: 'ADDED',
-      route: 'NEW ROUTE',
-      samplePrompt: 'Please resolve my flight disruption issue.',
-      description: `Newly ingested passenger via Admin Portal (${newPnr}).`
-    };
-    setActivePreset(customPreset);
-    setMessages([]);
-    setActions([]);
-    setEscalations([]);
-    setCustomer(null);
-    setBooking(null);
+    try {
+      const data = await lookupPNR(newPnr);
+      handleLoginSuccess(data);
+    } catch (err) {
+      setActivePnr(newPnr);
+      setIsLoggedIn(true);
+    }
   };
+
+  if (!isLoggedIn) {
+    return (
+      <>
+        <LoginScreen
+          onSuccess={handleLoginSuccess}
+          onOpenAdmin={() => setIsAdminOpen(true)}
+        />
+        <AdminModal
+          isOpen={isAdminOpen}
+          onClose={() => setIsAdminOpen(false)}
+          onSuccess={handleAdminSuccess}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="app-container">
       <Header
-        presets={PRESET_CUSTOMERS}
-        activePnr={activePreset.pnr}
-        onSelectPreset={handleSelectPreset}
+        customer={customer}
+        activePnr={activePnr}
+        onLogout={handleLogout}
         onOpenAdmin={() => setIsAdminOpen(true)}
       />
 
@@ -187,7 +183,7 @@ export const App: React.FC = () => {
           <CustomerBanner
             customer={customer}
             booking={booking}
-            fallbackPnr={activePreset.pnr}
+            fallbackPnr={activePnr}
           />
           <ChatWindow
             messages={messages}

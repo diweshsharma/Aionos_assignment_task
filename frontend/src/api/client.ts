@@ -32,6 +32,35 @@ export async function loginWithToken(token: string): Promise<boolean> {
   }
 }
 
+export interface PNRLookupResult {
+  customer_id: number;
+  name: string;
+  loyalty_tier: 'Silver' | 'Gold' | 'Platinum' | 'Base';
+  pnr: string;
+  contact?: string;
+  flights_last_12mo: number;
+  prior_complaints: any[];
+  booking: Booking;
+}
+
+export async function lookupPNR(pnr: string): Promise<PNRLookupResult> {
+  const res = await fetch(`${BASE_URL}/auth/lookup-pnr`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ pnr: pnr.trim() }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({ detail: 'Failed to look up PNR' }));
+    throw new Error(errData.detail || `PNR '${pnr}' not found`);
+  }
+
+  return res.json();
+}
+
 export async function sendChatMessage(
   pnr: string,
   message: string,

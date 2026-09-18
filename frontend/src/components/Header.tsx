@@ -1,18 +1,18 @@
 import React from 'react';
-import { Plane, UserCheck, PlusCircle, Activity } from 'lucide-react';
-import type { PresetCustomer } from '../types';
+import { Plane, UserCheck, PlusCircle, Activity, LogOut } from 'lucide-react';
+import type { Customer } from '../types';
 
 interface HeaderProps {
-  presets: PresetCustomer[];
+  customer?: Customer | null;
   activePnr: string;
-  onSelectPreset: (preset: PresetCustomer) => void;
+  onLogout: () => void;
   onOpenAdmin: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  presets,
+  customer,
   activePnr,
-  onSelectPreset,
+  onLogout,
   onOpenAdmin,
 }) => {
   return (
@@ -27,23 +27,56 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="presets-group">
-        {presets.map((p) => {
-          const isActive = p.pnr === activePnr;
-          return (
-            <button
-              key={p.pnr}
-              onClick={() => onSelectPreset(p)}
-              className={`preset-btn ${isActive ? 'active' : ''}`}
-              title={p.description}
-            >
-              <UserCheck size={14} />
-              <span>{p.label}</span>
-              <span className={`tier-badge tier-${p.tier}`}>{p.tier}</span>
-            </button>
-          );
-        })}
-      </div>
+      {activePnr && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'rgba(15, 23, 42, 0.7)',
+          padding: '6px 14px',
+          borderRadius: 12,
+          border: '1px solid var(--border-subtle)',
+        }}>
+          <UserCheck size={16} color="var(--accent-cyan)" />
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff' }}>
+                {customer?.name || `Passenger (${activePnr})`}
+              </span>
+              {customer?.loyalty_tier && (
+                <span className={`tier-badge tier-${customer.loyalty_tier}`}>
+                  {customer.loyalty_tier}
+                </span>
+              )}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              PNR: {activePnr}
+            </span>
+          </div>
+
+          <button
+            onClick={onLogout}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 8px',
+              borderRadius: 6,
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              marginLeft: 6,
+            }}
+            title="Switch PNR / Logout"
+          >
+            <LogOut size={12} />
+            <span>Switch PNR</span>
+          </button>
+        </div>
+      )}
 
       <div className="header-actions">
         <div className="status-badge">
