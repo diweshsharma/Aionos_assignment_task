@@ -17,6 +17,8 @@ class CustomerCreate(BaseModel):
     @field_validator("loyalty_tier")
     @classmethod
     def validate_tier(cls, v: str) -> str:
+        if v == "Base":
+            return "Standard"
         if v not in VALID_TIERS:
             raise ValueError(f"loyalty_tier must be one of {VALID_TIERS}")
         return v

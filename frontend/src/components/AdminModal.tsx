@@ -11,7 +11,7 @@ interface AdminModalProps {
 export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [tab, setTab] = useState<'single' | 'csv'>('single');
   const [name, setName] = useState('Rahul Sharma');
-  const [loyaltyTier, setLoyaltyTier] = useState<'Silver' | 'Gold' | 'Platinum' | 'Base'>('Gold');
+  const [loyaltyTier, setLoyaltyTier] = useState<'Silver' | 'Gold' | 'Platinum' | 'Standard' | 'Base'>('Gold');
   const [pnr, setPnr] = useState('RS9988X');
   const [flightNumber, setFlightNumber] = useState('AI505');
   const [routeOrigin] = useState('DEL');
@@ -33,12 +33,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onSucce
     setStatusMsg(null);
 
     try {
+      const todayStr = new Date().toISOString().split('T')[0];
+
       // 1. Create Customer
       const cust = await addCustomer({
         name,
-        loyalty_tier: loyaltyTier,
+        loyalty_tier: loyaltyTier === 'Base' ? 'Standard' : loyaltyTier,
         flights_last_12mo: 5,
-        contact: 'rahul@example.com',
+        contact: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
       });
 
       // 2. Create Booking linked to Customer
@@ -48,16 +50,23 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onSucce
         flight_number: flightNumber,
         route_origin: routeOrigin,
         route_dest: routeDest,
-        flight_date: new Date().toISOString().split('T')[0],
-        scheduled_departure: '10:00',
+        flight_date: todayStr,
+        scheduled_departure: `${todayStr}T10:00:00`,
         status: flightStatus,
         delay_hours: flightStatus === 'DELAYED' ? delayHours : 0,
       });
 
-      setStatusMsg({ type: 'success', text: `Added ${name} (PNR: ${pnr}) successfully!` });
+      setStatusMsg({ type: 'success', text: `Added ${name} (PNR: ${pnr.toUpperCase()}) successfully!` });
       onSuccess(pnr.toUpperCase());
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message || 'Failed to create record' });
+      const message = typeof err === 'string'
+        ? err
+        : err?.response?.data?.detail
+        || err?.response?.data?.message
+        || err?.message
+        || "Something went wrong — please check the form and try again.";
+      const text = typeof message === 'object' ? JSON.stringify(message) : String(message);
+      setStatusMsg({ type: 'error', text });
     } finally {
       setLoading(false);
     }
@@ -77,7 +86,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({ isOpen, onClose, onSucce
       const res = await importCSV(custCsv || undefined, bookCsv || undefined);
       setStatusMsg({ type: 'success', text: `Import complete: ${JSON.stringify(res.report)}` });
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message || 'Import failed' });
+      const message = typeof err === 'string'
+        ? err
+        : err?.response?.data?.detail
+        || err?.response?.data?.message
+        || err?.message
+        || "Import failed";
+      const text = typeof message === 'object' ? JSON.stringify(message) : String(message);
+      setStatusMsg({ type: 'error', text });
     } finally {
       setLoading(false);
     }

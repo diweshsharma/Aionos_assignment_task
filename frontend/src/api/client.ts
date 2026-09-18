@@ -43,6 +43,27 @@ export interface PNRLookupResult {
   booking: Booking;
 }
 
+function formatErrorMessage(detail: any, defaultMsg: string): string {
+  if (!detail) return defaultMsg;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d: any) => {
+        if (typeof d === 'string') return d;
+        if (d.msg) {
+          const locStr = Array.isArray(d.loc) ? d.loc.filter((l: any) => l !== 'body').join(' -> ') : '';
+          return locStr ? `${locStr}: ${d.msg}` : d.msg;
+        }
+        return d.detail || JSON.stringify(d);
+      })
+      .join('; ');
+  }
+  if (typeof detail === 'object') {
+    return detail.msg || detail.detail || detail.message || JSON.stringify(detail);
+  }
+  return defaultMsg;
+}
+
 export async function lookupPNR(pnr: string): Promise<PNRLookupResult> {
   const res = await fetch(`${BASE_URL}/auth/lookup-pnr`, {
     method: 'POST',
@@ -55,7 +76,7 @@ export async function lookupPNR(pnr: string): Promise<PNRLookupResult> {
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({ detail: 'Failed to look up PNR' }));
-    throw new Error(errData.detail || `PNR '${pnr}' not found`);
+    throw new Error(formatErrorMessage(errData.detail, `PNR '${pnr}' not found`));
   }
 
   return res.json();
@@ -81,7 +102,7 @@ export async function sendChatMessage(
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({ detail: 'Network response was not ok' }));
-    throw new Error(errData.detail || `Server error ${res.status}`);
+    throw new Error(formatErrorMessage(errData.detail, `Server error ${res.status}`));
   }
 
   return res.json();
@@ -108,7 +129,7 @@ export async function addCustomer(customerData: Partial<Customer>): Promise<Cust
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed to create customer' }));
-    throw new Error(err.detail || 'Failed to create customer');
+    throw new Error(formatErrorMessage(err.detail, 'Failed to create customer'));
   }
   return res.json();
 }
@@ -124,7 +145,7 @@ export async function addBooking(bookingData: Partial<Booking>): Promise<Booking
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed to create booking' }));
-    throw new Error(err.detail || 'Failed to create booking');
+    throw new Error(formatErrorMessage(err.detail, 'Failed to create booking'));
   }
   return res.json();
 }
@@ -144,7 +165,7 @@ export async function importCSV(customersFile?: File, bookingsFile?: File): Prom
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'CSV import failed' }));
-    throw new Error(err.detail || 'CSV import failed');
+    throw new Error(formatErrorMessage(err.detail, 'CSV import failed'));
   }
   return res.json();
 }

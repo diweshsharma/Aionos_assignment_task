@@ -1,7 +1,7 @@
 export interface Customer {
   id: string;
   name: string;
-  loyalty_tier: 'Silver' | 'Gold' | 'Platinum' | 'Base';
+  loyalty_tier: 'Silver' | 'Gold' | 'Platinum' | 'Standard' | 'Base';
   contact?: string;
   flights_last_12mo: number;
   prior_complaints?: string[];

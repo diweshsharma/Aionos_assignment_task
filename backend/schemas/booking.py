@@ -20,6 +20,14 @@ class BookingCreate(BaseModel):
     status: str
     delay_hours: Optional[float] = None
 
+    @field_validator("scheduled_departure", mode="before")
+    @classmethod
+    def parse_scheduled_departure(cls, v: any) -> any:
+        if isinstance(v, str) and len(v) == 5 and ":" in v:
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            return f"{today_str}T{v}:00"
+        return v
+
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str) -> str:

@@ -168,3 +168,92 @@ def test_import_bookings_csv_success(client):
     data = resp.json()
     assert data["bookings"]["status"] == "success"
     assert data["bookings"]["success_count"] == 1
+
+
+def test_admin_ingestion_form_submission(client):
+    """
+    Test submitting the exact Admin Data Ingestion form field set:
+    Rahul Sharma, Gold, RS9988X, AI505, DELAYED, 4h.
+    """
+    # 1. Create customer
+    cust_resp = client.post(
+        "/admin/customers",
+        json={
+            "name": "Rahul Sharma",
+            "loyalty_tier": "Gold",
+            "contact": "rahul.sharma@example.com",
+            "flights_last_12mo": 5,
+        },
+        headers=AUTH,
+    )
+    assert cust_resp.status_code == 201
+    cust_data = cust_resp.json()
+    assert cust_data["id"] is not None
+    assert cust_data["name"] == "Rahul Sharma"
+
+    # 2. Create booking with time string '10:00' or ISO datetime
+    book_resp = client.post(
+        "/admin/bookings",
+        json={
+            "pnr": "RS9988X",
+            "customer_id": cust_data["id"],
+            "flight_number": "AI505",
+            "route_origin": "DEL",
+            "route_dest": "BOM",
+            "flight_date": "2026-09-18",
+            "scheduled_departure": "10:00",
+            "status": "DELAYED",
+            "delay_hours": 4,
+        },
+        headers=AUTH,
+    )
+    assert book_resp.status_code == 201
+    book_data = book_resp.json()
+    assert book_data["pnr"] == "RS9988X"
+    assert book_data["status"] == "DELAYED"
+    assert book_data["delay_hours"] == 4.0
+
+
+def test_admin_duplicate_pnr_conflict(client):
+    """Submitting a duplicate PNR must return 409 Conflict with a clear error detail, not 500."""
+    # First create customer & booking
+    cust_resp = client.post(
+        "/admin/customers",
+        json={"name": "Dup User", "loyalty_tier": "Standard", "contact": "dup@example.com"},
+        headers=AUTH,
+    )
+    cust_id = cust_resp.json()["id"]
+
+    client.post(
+        "/admin/bookings",
+        json={
+            "pnr": "DUP123",
+            "customer_id": cust_id,
+            "flight_number": "AI100",
+            "route_origin": "DEL",
+            "route_dest": "BOM",
+            "flight_date": "2026-09-18",
+            "scheduled_departure": "2026-09-18T10:00:00",
+            "status": "ON_TIME",
+        },
+        headers=AUTH,
+    )
+
+    # Re-submit exact same PNR DUP123
+    resp = client.post(
+        "/admin/bookings",
+        json={
+            "pnr": "DUP123",
+            "customer_id": cust_id,
+            "flight_number": "AI100",
+            "route_origin": "DEL",
+            "route_dest": "BOM",
+            "flight_date": "2026-09-18",
+            "scheduled_departure": "2026-09-18T10:00:00",
+            "status": "ON_TIME",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 409
+    assert "already exists" in resp.json()["detail"]
+

@@ -52,6 +52,13 @@ def add_booking(
     db=Depends(get_db),
 ):
     """Insert a single new booking record."""
+    from models import Booking
+    existing = db.query(Booking).filter(Booking.pnr == body.pnr).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"PNR '{body.pnr}' already exists.",
+        )
     booking = create_booking(body.model_dump(), db)
     return booking
 
