@@ -103,6 +103,16 @@ if os.path.exists(frontend_dist):
         return FileResponse(os.path.join(frontend_dist, "index.html"))
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "AIONOS SkyAssist API",
+        "status": "online",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 # ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["health"])
 def health():
