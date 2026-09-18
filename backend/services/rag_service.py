@@ -32,9 +32,11 @@ class RAGService:
 
         Path(self._chroma_path).mkdir(parents=True, exist_ok=True)
 
-        self._ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
+        try:
+            self._ef = embedding_functions.DefaultEmbeddingFunction()
+        except Exception:
+            # Fallback to default ONNX if any issue
+            self._ef = embedding_functions.DefaultEmbeddingFunction()
         self._client = chromadb.PersistentClient(path=self._chroma_path)
         self._collection = self._client.get_or_create_collection(
             name=self._collection_name,
