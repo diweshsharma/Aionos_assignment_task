@@ -203,6 +203,42 @@ Try the pre-seeded passenger scenarios directly on the login screen ([http://loc
 
 ---
 
+## 🐳 Deployment Guide
+
+### Option 1: Docker & Docker Compose (Recommended)
+
+Spin up both the backend FastAPI service and the Nginx-served frontend with a single command:
+
+```bash
+# 1. Clone repository and set environment variables
+git clone https://github.com/diweshsharma/Aionos_assignment_task.git
+cd Aionos_assignment_task
+
+# 2. Build and launch containers in background
+docker compose up -d --build
+```
+- **Frontend App**: Accessible at `http://localhost:80` (or `http://localhost:5173`)
+- **Backend API**: Accessible at `http://localhost:8000`
+
+---
+
+### Option 2: Cloud PaaS Deployment (Render / Railway / Vercel)
+
+1. **Backend Service (Render / Railway)**:
+   - Environment: **Python 3.11** (or Docker using `backend/Dockerfile`).
+   - Root Directory: `backend`
+   - Build Command: `pip install -r requirements.txt && python seed.py`
+   - Start Command: `uvicorn main:app --host 0.0.0.0 --port 8000`
+   - Environment Variables: Set `GROQ_API_KEY` and `AUTH_TOKEN`.
+
+2. **Frontend Service (Vercel / Netlify / Render Static Site)**:
+   - Root Directory: `frontend`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+   - Environment Variable: Set `VITE_API_BASE_URL` pointing to your backend production URL.
+
+---
+
 ## 🛡️ Security & Git Compliance
 
 - **Push Protection**: `.env`, SQLite databases (`airline_agent.db`), vector stores (`chroma_db/`), and build artifacts are strictly excluded from version control via `.gitignore`.
