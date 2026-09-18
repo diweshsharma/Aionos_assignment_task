@@ -51,9 +51,14 @@ def make_extract_intents_node(llm) -> Callable[[AgentState], dict]:
     """Node 1 — LLM extracts structured intents from the customer message."""
 
     def extract_intents_node(state: AgentState) -> dict:
-        intents = llm.extract_intents(state["message"])
-        logger.debug("[extract_intents] %s", intents)
-        return {"intents": intents}
+        logger.info("[NODE START] extract_intents | pnr=%s msg='%s'", state.get("pnr"), state.get("message"))
+        try:
+            intents = llm.extract_intents(state["message"])
+            logger.info("[NODE END] extract_intents | intents=%s", intents)
+            return {"intents": intents}
+        except Exception as exc:
+            logger.exception("[NODE ERROR] extract_intents failed: %s", exc)
+            return {"intents": {}, "error": f"Intent extraction failed: {exc}"}
 
     return extract_intents_node
 
@@ -62,19 +67,25 @@ def make_lookup_booking_node(SessionLocal) -> Callable[[AgentState], dict]:
     """Node 2 — DB lookup: find customer + booking by PNR."""
 
     def lookup_booking_node(state: AgentState) -> dict:
+        pnr = state.get("pnr", "")
+        logger.info("[NODE START] lookup_booking | pnr=%s", pnr)
         db = SessionLocal()
         try:
             from services.booking_service import get_customer_by_pnr
-            result = get_customer_by_pnr(state["pnr"], db)
+            result = get_customer_by_pnr(pnr, db)
             if result is None:
-                return {"error": f"No booking found for PNR '{state['pnr']}'. Please verify and try again."}
+                logger.warning("[NODE END] lookup_booking | PNR '%s' not found", pnr)
+                return {"error": f"No booking found for PNR '{pnr}'. Please verify and try again."}
             customer, booking = result
+            cust_dict = _customer_to_dict(customer)
+            book_dict = _booking_to_dict(booking)
+            logger.info("[NODE END] lookup_booking | customer=%s booking_status=%s", cust_dict.get("name"), book_dict.get("status"))
             return {
-                "customer": _customer_to_dict(customer),
-                "booking": _booking_to_dict(booking),
+                "customer": cust_dict,
+                "booking": book_dict,
             }
         except Exception as exc:
-            logger.exception("lookup_booking error")
+            logger.exception("[NODE ERROR] lookup_booking failed: %s", exc)
             return {"error": str(exc)}
         finally:
             db.close()
@@ -90,8 +101,10 @@ def make_retrieve_policy_node(rag) -> Callable[[AgentState], dict]:
         intents = state.get("intents") or {}
         status = booking.get("status", "")
         intent_str = intents.get("primary_intent", "info")
+        logger.info("[NODE START] retrieve_policy | status=%s intent=%s", status, intent_str)
         query = f"Flight {status} {intent_str} policy compensation"
         context = rag.retrieve(query)
+        logger.info("[NODE END] retrieve_policy | context_len=%d", len(context))
         return {"policy_context": context}
 
     return retrieve_policy_node
@@ -104,6 +117,7 @@ def make_evaluate_policy_node(policy_engine) -> Callable[[AgentState], dict]:
         booking = state.get("booking") or {}
         status = booking.get("status", "ON_TIME")
         delay_hours = booking.get("delay_hours")
+        logger.info("[NODE START] evaluate_policy | status=%s delay_hours=%s", status, delay_hours)
 
         decision: dict[str, Any] = {"flight_status": status}
 
@@ -123,6 +137,7 @@ def make_evaluate_policy_node(policy_engine) -> Callable[[AgentState], dict]:
             decision["cancellation_policy"] = None
 
         decision["fare_waiver_limit"] = policy_engine.get_fare_waiver_limit()
+        logger.info("[NODE END] evaluate_policy | entitled=%s", decision.get("entitled_benefits"))
         return {"policy_decision": decision}
 
     return evaluate_policy_node
@@ -132,6 +147,7 @@ def make_authority_check_node(policy_engine) -> Callable[[AgentState], dict]:
     """Node 5 — authority_guard: determine what's allowed vs. must escalate."""
 
     def authority_check_node(state: AgentState) -> dict:
+        logger.info("[NODE START] authority_check")
         intents = state.get("intents") or {}
         policy_decision = state.get("policy_decision") or {}
         message = state.get("message", "")
@@ -148,6 +164,7 @@ def make_authority_check_node(policy_engine) -> Callable[[AgentState], dict]:
                 "Legal action or formal complaint threat detected. "
                 "This conversation has been immediately escalated to a supervisor."
             )
+            logger.info("[NODE END] authority_check | immediate_escalate=True")
             return {
                 "authority_result": {
                     "allowed_actions": [],
@@ -195,11 +212,9 @@ def make_authority_check_node(policy_engine) -> Callable[[AgentState], dict]:
                     allowed_actions.append("provide_hotel_delayed_hours")
                     if full_night_esc:
                         escalation_reasons.append(explanation)
-                    # else: normal hotel, no escalation
                 else:
                     denied_non_escalated.append(explanation)
             elif "hotel_delayed_hours" in entitled:
-                # Customer is entitled but didn't explicitly ask — proactively offer
                 allowed_actions.append("provide_hotel_delayed_hours")
 
         # ── Fare-difference waiver ────────────────────────────────────────────
@@ -220,6 +235,7 @@ def make_authority_check_node(policy_engine) -> Callable[[AgentState], dict]:
                 for d in details:
                     escalation_reasons.append(d["escalation_reason"])
 
+        logger.info("[NODE END] authority_check | allowed=%s escalations=%d", allowed_actions, len(escalation_reasons))
         return {
             "authority_result": {
                 "allowed_actions": allowed_actions,
@@ -240,6 +256,7 @@ def make_execute_action_node(policy_engine) -> Callable[[AgentState], dict]:
         allowed = authority.get("allowed_actions", [])
         booking = state.get("booking") or {}
         policy_decision = state.get("policy_decision") or {}
+        logger.info("[NODE START] execute_action | allowed_count=%d", len(allowed))
         actions_taken = []
 
         for action in allowed:
@@ -294,6 +311,7 @@ def make_execute_action_node(policy_engine) -> Callable[[AgentState], dict]:
                     "details": {"amount_inr": int(amount)},
                 })
 
+        logger.info("[NODE END] execute_action | executed_count=%d", len(actions_taken))
         return {"actions_taken": actions_taken}
 
     return execute_action_node
@@ -305,6 +323,7 @@ def make_escalate_node() -> Callable[[AgentState], dict]:
     def escalate_node(state: AgentState) -> dict:
         authority = state.get("authority_result") or {}
         reasons = authority.get("escalation_reasons", [])
+        logger.info("[NODE START & END] escalate | reasons_count=%d", len(reasons))
         return {"escalations": reasons}
 
     return escalate_node
@@ -378,8 +397,10 @@ INSTRUCTIONS:
 """.strip()
 
     def generate_response_node(state: AgentState) -> dict:
+        logger.info("[NODE START] generate_response")
         prompt = _build_prompt(state)
         response = llm.generate_response(prompt)
+        logger.info("[NODE END] generate_response | len=%d", len(response))
         return {"response": response}
 
     return generate_response_node
@@ -389,6 +410,7 @@ def make_log_turn_node(SessionLocal) -> Callable[[AgentState], dict]:
     """Node 9 — persist conversation turn and all action/escalation logs to DB."""
 
     def log_turn_node(state: AgentState) -> dict:
+        logger.info("[NODE START] log_turn")
         db = SessionLocal()
         try:
             from services.booking_service import (
@@ -406,8 +428,7 @@ def make_log_turn_node(SessionLocal) -> Callable[[AgentState], dict]:
                 conv = get_or_create_conversation(customer_id, db)
                 conv_id = conv.id
             elif not customer_id:
-                # Unknown PNR — we can still log with a placeholder conversation
-                # (or skip; here we skip to avoid FK errors)
+                logger.warning("[NODE END] log_turn | No customer_id to log turn")
                 return {"conversation_id": None}
 
             # Log user turn
@@ -421,14 +442,17 @@ def make_log_turn_node(SessionLocal) -> Callable[[AgentState], dict]:
             for action in state.get("actions_taken", []):
                 log_action(conv_id, action["type"], action.get("details", {}), False, db)
 
-            # Log escalations
+            # Log escalations ALWAYS as action_type="escalation_flagged" with escalated=True
             for reason in state.get("escalations", []):
                 log_action(conv_id, "escalation_flagged", {"reason": reason}, True, db)
+
+            logger.info("[NODE END] log_turn | conv_id=%s actions_logged=%d escalations_logged=%d",
+                        conv_id, len(state.get("actions_taken", [])), len(state.get("escalations", [])))
 
             return {"conversation_id": conv_id}
 
         except Exception as exc:
-            logger.exception("log_turn error: %s", exc)
+            logger.exception("[NODE ERROR] log_turn error: %s", exc)
             db.rollback()
             return {"conversation_id": state.get("conversation_id")}
         finally:
@@ -441,6 +465,7 @@ def make_error_node(llm) -> Callable[[AgentState], dict]:
     """Error path — generates a polite not-found response."""
 
     def error_node(state: AgentState) -> dict:
+        logger.info("[NODE START & END] error_node | pnr=%s", state.get("pnr"))
         response = llm.generate_response(
             f"The customer provided PNR '{state['pnr']}' but no booking was found. "
             "Please generate a polite response asking them to verify their PNR."

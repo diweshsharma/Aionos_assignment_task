@@ -60,10 +60,15 @@ def chat(
     ]
 
     escalations_raw = final_state.get("escalations", [])
-    escalations_formatted = [
-        {"reason": e} if isinstance(e, str) else e
-        for e in escalations_raw
-    ]
+    escalations_formatted = []
+    for e in escalations_raw:
+        reason_str = e if isinstance(e, str) else e.get("reason", str(e))
+        escalations_formatted.append({"reason": reason_str})
+        actions.append(ActionDetail(
+            type="escalation_flagged",
+            details={"reason": reason_str},
+            escalated=True
+        ))
 
     resp_text = final_state.get("response") or final_state.get("error") or "No response generated."
 
