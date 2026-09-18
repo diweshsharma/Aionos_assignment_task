@@ -214,24 +214,41 @@ def make_authority_check_node(policy_engine) -> Callable[[AgentState], dict]:
             entitled = policy_decision.get("entitled_benefits", [])
             delay_hours = policy_decision.get("delay_hours", 0) or 0
 
-            if "meal_voucher_500" in entitled:
-                allowed_actions.append("issue_meal_voucher_500")
-            if "lounge_access" in entitled:
-                allowed_actions.append("grant_lounge_access")
+            # Only process general delay benefits (vouchers, lounge, hotel) if:
+            # 1. Customer asked for delay benefits / info / compensation / hotel, OR
+            # 2. Customer didn't specify an explicit separate request (like fare waiver, refund, legal threat)
+            wants_specific_other = (
+                intents.get("fare_difference_waiver_inr") is not None or
+                intents.get("wants_refund") or
+                intents.get("wants_different_payment_method") or
+                intents.get("is_legal_threat")
+            )
+            wants_delay_benefits = (
+                intents.get("wants_hotel") or
+                intents.get("wants_full_night_hotel") or
+                intents.get("primary_intent") in ["compensation", "info"] or
+                not wants_specific_other
+            )
 
-            # Hotel handling
-            if intents.get("wants_hotel") or intents.get("wants_full_night_hotel"):
-                hotel_ok, full_night_esc, explanation = ag.check_hotel_entitlement(
-                    delay_hours, entitled, bool(intents.get("wants_full_night_hotel"))
-                )
-                if hotel_ok:
+            if wants_delay_benefits:
+                if "meal_voucher_500" in entitled:
+                    allowed_actions.append("issue_meal_voucher_500")
+                if "lounge_access" in entitled:
+                    allowed_actions.append("grant_lounge_access")
+
+                # Hotel handling
+                if intents.get("wants_hotel") or intents.get("wants_full_night_hotel"):
+                    hotel_ok, full_night_esc, explanation = ag.check_hotel_entitlement(
+                        delay_hours, entitled, bool(intents.get("wants_full_night_hotel"))
+                    )
+                    if hotel_ok:
+                        allowed_actions.append("provide_hotel_delayed_hours")
+                        if full_night_esc:
+                            escalation_reasons.append(explanation)
+                    else:
+                        denied_non_escalated.append(explanation)
+                elif "hotel_delayed_hours" in entitled and (not wants_specific_other or intents.get("primary_intent") == "compensation"):
                     allowed_actions.append("provide_hotel_delayed_hours")
-                    if full_night_esc:
-                        escalation_reasons.append(explanation)
-                else:
-                    denied_non_escalated.append(explanation)
-            elif "hotel_delayed_hours" in entitled:
-                allowed_actions.append("provide_hotel_delayed_hours")
 
         # ── Fare-difference waiver ────────────────────────────────────────────
         fare_waiver_ask = intents.get("fare_difference_waiver_inr")

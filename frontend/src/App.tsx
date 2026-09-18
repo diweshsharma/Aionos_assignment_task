@@ -131,7 +131,11 @@ export const App: React.FC = () => {
           ...a,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }));
-        setActions((prev) => [...prev, ...datedActions]);
+        setActions((prev) => {
+          const existingTypes = new Set(prev.map(a => a.type));
+          const newUnique = datedActions.filter(a => !existingTypes.has(a.type));
+          return [...prev, ...newUnique];
+        });
       }
 
       if (res.escalations && res.escalations.length > 0) {
@@ -139,7 +143,11 @@ export const App: React.FC = () => {
           ...e,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }));
-        setEscalations((prev) => [...prev, ...datedEscalations]);
+        setEscalations((prev) => {
+          const existingReasons = new Set(prev.map(e => e.reason));
+          const newUnique = datedEscalations.filter(e => !existingReasons.has(e.reason));
+          return [...prev, ...newUnique];
+        });
 
         // Auto-open Details panel ONCE per session on first escalation
         if (!hasAutoOpenedDetails) {

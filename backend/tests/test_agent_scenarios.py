@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, date
 
-from services.llm_client import MockLLMClient
+from services.llm_client import LLMClient, MockLLMClient
 from tests.conftest import make_graph, invoke_graph
 
 from config import settings
@@ -256,6 +256,63 @@ def test_legal_threat_triggers_immediate_escalation(seeded_db, policy, rag, Test
     # Escalation reason must mention legal threat
     escalation_text = " ".join(state["escalations"]).lower()
     assert "legal" in escalation_text or "supervisor" in escalation_text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MULTI-TURN REGRESSION TESTS — Distinct requests produce distinct responses
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_sequential_distinct_requests_in_same_session(seeded_db, policy, rag, TestSessionLocal):
+    """
+    Regression test for bug report:
+    Turn 1: Request full night hotel stay (6h delay PNR WL7742).
+    Turn 2: Ask for ₹2000 fare waiver in the SAME session.
+    Assert Turn 2 processes fare waiver, escalates fare waiver > ₹1500, and does NOT repeat Turn 1 hotel text.
+    """
+    llm = LLMClient()
+    graph = make_graph(llm, policy, rag, TestSessionLocal)
+
+    # Turn 1: Hotel request
+    state1 = invoke_graph(
+        graph,
+        pnr="WL7742",
+        message="Request full night hotel stay for 6h delay",
+    )
+    conv_id = state1.get("conversation_id")
+    reply1 = state1.get("response", "")
+
+    # Turn 2: Fare waiver request (different topic in same conversation)
+    state2 = invoke_graph(
+        graph,
+        pnr="WL7742",
+        message="Ask for ₹2000 fare waiver",
+        conversation_id=conv_id,
+    )
+    reply2 = state2.get("response", "")
+
+    # Assert Turn 2 response addresses fare waiver / ₹2000 and NOT hotel
+    reply2_lower = reply2.lower()
+    assert ("2000" in reply2_lower or "fare" in reply2_lower or "waiver" in reply2_lower)
+    assert reply1 != reply2, "Turn 2 response must not be identical to Turn 1 response!"
+
+    # Assert fare waiver escalation is captured in Turn 2
+    esc2_text = " ".join(state2.get("escalations", [])).lower()
+    assert "fare" in esc2_text or "2000" in esc2_text or "1500" in esc2_text
+
+
+def test_consecutive_different_messages_produce_distinct_responses(seeded_db, policy, rag, TestSessionLocal):
+    """
+    General regression test: consecutive distinct messages must produce distinct replies.
+    """
+    llm = LLMClient()
+    graph = make_graph(llm, policy, rag, TestSessionLocal)
+
+    s1 = invoke_graph(graph, pnr="WL7742", message="What benefits am I entitled to?")
+    conv_id = s1.get("conversation_id")
+
+    s2 = invoke_graph(graph, pnr="WL7742", message="Ask for ₹2000 fare waiver", conversation_id=conv_id)
+
+    assert s1.get("response") != s2.get("response"), "Distinct messages in a session must not produce duplicate responses!"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -262,9 +262,14 @@ class LLMClient:
 
         # 3. Declined & Escalations (conversational plain language)
         if escalations_section and "(none)" not in escalations_section:
-            if "full night" in escalations_section.lower() or "hotel" in escalations_section.lower():
+            esc_lower = escalations_section.lower()
+            if "fare difference" in esc_lower or "waiver" in esc_lower:
+                match_amt = re.search(r'(?:₹|rs\.?|inr|\s)(\d+)', esc_lower)
+                amt_str = f"₹{match_amt.group(1)}" if match_amt else "the requested amount"
+                sentences.append(f"The fare difference waiver of {amt_str} exceeds what I can approve directly (our limit is ₹1,500), so I've flagged this for a supervisor to review with you.")
+            elif "full night" in esc_lower or "hotel" in esc_lower:
                 sentences.append("A full night's stay isn't something I'm able to approve directly, so I've flagged that for a supervisor to review with you.")
-            elif "different payment" in escalations_section.lower() or "payment method" in escalations_section.lower():
+            elif "different payment" in esc_lower or "payment method" in esc_lower:
                 sentences.append("Refunding to a different payment method requires secondary review, so I've escalated your request to a supervisor.")
             else:
                 sentences.append("Your request requires specialist review, so I've flagged it for a supervisor to follow up with you directly.")
