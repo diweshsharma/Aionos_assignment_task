@@ -79,10 +79,26 @@ def make_lookup_booking_node(SessionLocal) -> Callable[[AgentState], dict]:
             customer, booking = result
             cust_dict = _customer_to_dict(customer)
             book_dict = _booking_to_dict(booking)
-            logger.info("[NODE END] lookup_booking | customer=%s booking_status=%s", cust_dict.get("name"), book_dict.get("status"))
+            
+            # Retrieve prior conversation turns for multi-turn context
+            history_list = []
+            conv_id = state.get("conversation_id")
+            if conv_id:
+                from models import ConversationTurn
+                turns = db.query(ConversationTurn).filter(ConversationTurn.conversation_id == conv_id).order_by(ConversationTurn.created_at.asc()).all()
+                history_list = [{"role": t.role, "content": t.content} for t in turns]
+            elif customer:
+                from models import Conversation, ConversationTurn
+                conv = db.query(Conversation).filter(Conversation.customer_id == customer.id).order_by(Conversation.started_at.desc()).first()
+                if conv:
+                    turns = db.query(ConversationTurn).filter(ConversationTurn.conversation_id == conv.id).order_by(ConversationTurn.created_at.asc()).all()
+                    history_list = [{"role": t.role, "content": t.content} for t in turns]
+
+            logger.info("[NODE END] lookup_booking | customer=%s history_turns=%d", cust_dict.get("name"), len(history_list))
             return {
                 "customer": cust_dict,
                 "booking": book_dict,
+                "history": history_list,
             }
         except Exception as exc:
             logger.exception("[NODE ERROR] lookup_booking failed: %s", exc)
@@ -360,40 +376,44 @@ def make_generate_response_node(llm, policy_engine) -> Callable[[AgentState], di
             f"  - {d}" for d in denied
         ) or "  (none)"
 
-        priority = "priority " if policy_engine.is_priority_tier(
-            customer.get("loyalty_tier", "")
-        ) else ""
+        history = state.get("history") or []
+        history_lines = "\n".join(
+            f"  - {h['role'].upper()}: {h['content']}" for h in history[-6:]
+        ) or "  (first message)"
 
         return f"""
-You are responding to an airline customer support request. Use the exact context below.
+You are responding to an airline customer support request.
 
 CUSTOMER: {customer.get('name', 'Customer')} ({customer.get('loyalty_tier', 'Standard')} tier)
-FLIGHT: {booking.get('flight_number')} | {booking.get('route_origin')} → {booking.get('route_dest')}
-DATE: {booking.get('flight_date')}  STATUS: {booking.get('status')}
+FLIGHT: {booking.get('flight_number')} | {booking.get('route_origin')} → {booking.get('route_dest')} | DATE: {booking.get('flight_date')} | STATUS: {booking.get('status')}
 {'DELAY: ' + str(booking.get('delay_hours')) + ' hours' if booking.get('delay_hours') else ''}
 
-CUSTOMER MESSAGE: "{state.get('message', '')}"
+RECENT CONVERSATION HISTORY:
+{history_lines}
 
-ACTIONS TAKEN (confirmed, must be mentioned in response):
+NEW CUSTOMER MESSAGE: "{state.get('message', '')}"
+
+ACTIONS TAKEN (confirmed system actions):
 {action_lines}
 
-ITEMS DECLINED — explain policy reason, NO escalation needed:
+ITEMS DECLINED:
 {denied_lines}
 
-ITEMS ESCALATED TO SUPERVISOR (mention each; say a supervisor will follow up):
+ITEMS ESCALATED TO SUPERVISOR:
 {escalation_lines}
 
-POLICY CONTEXT (for accurate language):
-{state.get('policy_context', '')}
-
-INSTRUCTIONS:
-1. Open with empathy about the disruption.
-2. Clearly confirm every action taken (vouchers, rebook offer, refund offer, hotel).
-3. For priority tier customers ({priority}tier), acknowledge their loyalty.
-4. For declined items: cite the specific policy rule; do NOT apologise excessively.
-5. For escalated items: state clearly each item has been flagged for supervisor review and they will be contacted.
-6. Close with next steps.
-7. Keep the tone professional and warm. Do NOT invent any offers or policies.
+RULES FOR REPLY TEXT (CRITICAL):
+1. Write ONLY a short, natural-language reply in empathetic conversational dialogue.
+2. NO salutations like "Dear [Name] ([Tier] tier)". Use first name naturally if appropriate.
+3. NO inline bulleted lists of policy rules or "Policy Rules Applied:".
+4. NO literal labels like "Human Supervisor Review Flagged:" or "Escalated:". Say it conversationally ("I've flagged that for a supervisor to review with you").
+5. Follow the natural 4-step structure:
+   (a) Acknowledge & empathize with the disruption.
+   (b) State what was found/confirmed regarding the flight.
+   (c) State what actions were processed or what options are available.
+   (d) State plainly what cannot be done and what happens next.
+6. If the customer message is brief gratitude ("thanks", "ok"), respond warmly without repeating policy details.
+7. If the customer asks a follow-up ("why can't you give full night?"), answer conversationally using the prior turns context.
 """.strip()
 
     def generate_response_node(state: AgentState) -> dict:

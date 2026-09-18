@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, ShieldAlert, BookOpen, Sparkles } from 'lucide-react';
+import { Send, Bot, User, Flag, Sparkles, SlidersHorizontal } from 'lucide-react';
 import type { ChatMessage } from '../types';
 
 interface ChatWindowProps {
@@ -7,6 +7,10 @@ interface ChatWindowProps {
   isLoading: boolean;
   onSendMessage: (text: string) => void;
   quickPrompts: string[];
+  onToggleDetails: () => void;
+  isDetailsOpen: boolean;
+  actionsCount: number;
+  escalationsCount: number;
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -14,6 +18,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   isLoading,
   onSendMessage,
   quickPrompts,
+  onToggleDetails,
+  isDetailsOpen,
+  actionsCount,
+  escalationsCount,
 }) => {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -38,6 +46,31 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   return (
     <div className="chat-container">
+      {/* Top Header Bar for Chat */}
+      <div className="chat-header-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Bot size={18} color="var(--accent-cyan)" />
+          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+            Support Assistant
+          </span>
+          <span className="online-indicator-pill">Online</span>
+        </div>
+
+        <button
+          className={`details-toggle-btn ${isDetailsOpen ? 'active' : ''}`}
+          onClick={onToggleDetails}
+          title="Toggle operational logs & profile"
+        >
+          <SlidersHorizontal size={14} />
+          <span>Disruption Details</span>
+          {(actionsCount > 0 || escalationsCount > 0) && (
+            <span className="details-badge">
+              {actionsCount + escalationsCount}
+            </span>
+          )}
+        </button>
+      </div>
+
       <div className="messages-feed" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="empty-state">
@@ -45,22 +78,22 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             <p style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
               Airline Disruption Resolution Assistant
             </p>
-            <p>Select a passenger preset above or type a request to get started.</p>
+            <p>Connecting to your flight context...</p>
           </div>
         )}
 
         {messages.map((msg) => (
           <div key={msg.id} className={`message-bubble ${msg.sender}`}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>
               {msg.sender === 'agent' ? (
                 <>
                   <Bot size={13} color="var(--accent-cyan)" />
-                  <span style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>AI Resolution Agent</span>
+                  <span style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>AIONOS Support Agent</span>
                 </>
               ) : (
                 <>
                   <User size={13} color="var(--accent-blue)" />
-                  <span>Passenger</span>
+                  <span>You</span>
                 </>
               )}
               <span>•</span>
@@ -70,35 +103,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             <div className="bubble-content">
               {msg.text}
 
-              {/* Policy Cites */}
-              {msg.policy_cites && msg.policy_cites.length > 0 && (
-                <div className="policy-cite-box">
-                  <div className="policy-cite-header">
-                    <BookOpen size={13} />
-                    <span>Policy Rules Applied:</span>
-                  </div>
-                  <ul style={{ paddingLeft: 16, margin: 0 }}>
-                    {msg.policy_cites.map((cite, idx) => (
-                      <li key={idx}>{cite}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Escalations Alert */}
+              {/* Subtle inline escalation marker (no raw JSON/policy reasoning) */}
               {msg.escalations && msg.escalations.length > 0 && (
-                <div className="escalation-alert-badge">
-                  <ShieldAlert size={20} style={{ flexShrink: 0, marginTop: 2, color: '#f43f5e' }} />
-                  <div>
-                    <div className="escalation-alert-title">
-                      Escalated to Human Supervisor
-                    </div>
-                    {msg.escalations.map((esc, i) => (
-                      <div key={i} style={{ marginTop: 2 }}>
-                        • {esc.reason}
-                      </div>
-                    ))}
-                  </div>
+                <div className="subtle-escalation-tag">
+                  <Flag size={12} color="#f43f5e" />
+                  <span>Escalated to a supervisor</span>
                 </div>
               )}
             </div>
@@ -107,13 +116,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
         {isLoading && (
           <div className="message-bubble agent">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--accent-cyan)', marginBottom: 4 }}>
               <Bot size={13} />
-              <span>Evaluating Policy & Actions...</span>
+              <span>AIONOS Support Agent</span>
             </div>
             <div className="bubble-content" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Sparkles size={16} className="spin-icon" style={{ animation: 'spin 1.5s linear infinite' }} />
-              <span style={{ color: 'var(--text-secondary)' }}>Processing disruption resolution...</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Checking options...</span>
             </div>
           </div>
         )}
@@ -138,7 +147,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         <input
           type="text"
           className="chat-input"
-          placeholder="Ask for refund, rebooking, lounge pass, hotel, or waiver..."
+          placeholder="Ask a question or request assistance..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={isLoading}
@@ -150,3 +159,4 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     </div>
   );
 };
+

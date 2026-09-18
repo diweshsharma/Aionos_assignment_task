@@ -55,6 +55,9 @@ class AgentState(TypedDict):
     actions_taken: list[dict[str, Any]]
     escalations: list[str]
 
+    # ── Populated by lookup_booking node (DB history) ───────────────────────
+    history: Optional[list[dict[str, str]]]
+
     # ── Populated by generate_response node (LLM) ─────────────────────────────
     response: Optional[str]
 

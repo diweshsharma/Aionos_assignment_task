@@ -21,6 +21,9 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
 
+  const [isDetailsOpen, setIsDetailsOpen] = useState<boolean>(false);
+  const [hasAutoOpenedDetails, setHasAutoOpenedDetails] = useState<boolean>(false);
+
   // Initialize auth token on mount
   useEffect(() => {
     loginWithToken('dev_secret_token_123');
@@ -57,19 +60,39 @@ export const App: React.FC = () => {
   const handleLoginSuccess = (data: PNRLookupResult) => {
     setActivePnr(data.pnr);
     setIsLoggedIn(true);
-    setCustomer({
+    const custData = {
       id: String(data.customer_id),
       name: data.name,
       loyalty_tier: data.loyalty_tier,
       contact: data.contact,
       flights_last_12mo: data.flights_last_12mo,
       prior_complaints: data.prior_complaints,
-    });
+    };
+    setCustomer(custData);
     setBooking(data.booking);
-    setMessages([]);
     setActions([]);
     setEscalations([]);
     setConversationId(undefined);
+    setIsDetailsOpen(false);
+    setHasAutoOpenedDetails(false);
+
+    // Proactive Agent Greeting
+    const firstName = data.name ? data.name.split(' ')[0] : 'there';
+    let welcomeText = `Hi ${firstName}, welcome! How can I assist you with your booking today?`;
+    if (data.booking?.status === 'CANCELLED') {
+      welcomeText = `Hi ${firstName}, I can see flight ${data.booking.flight_number} to ${data.booking.route_dest} was cancelled — I'm so sorry about this disruption. How can I help you today?`;
+    } else if (data.booking?.status === 'DELAYED') {
+      const delayInfo = data.booking.delay_hours ? `${data.booking.delay_hours} hours` : 'delayed';
+      welcomeText = `Hi ${firstName}, I can see flight ${data.booking.flight_number} to ${data.booking.route_dest} is delayed ${delayInfo} — sorry about the wait! How can I help?`;
+    }
+
+    const initialMsg: ChatMessage = {
+      id: `agent-welcome-${Date.now()}`,
+      sender: 'agent',
+      text: welcomeText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages([initialMsg]);
   };
 
   const handleLogout = () => {
@@ -81,6 +104,8 @@ export const App: React.FC = () => {
     setActions([]);
     setEscalations([]);
     setConversationId(undefined);
+    setIsDetailsOpen(false);
+    setHasAutoOpenedDetails(false);
   };
 
   const handleSendMessage = async (text: string) => {
@@ -115,6 +140,12 @@ export const App: React.FC = () => {
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }));
         setEscalations((prev) => [...prev, ...datedEscalations]);
+
+        // Auto-open Details panel ONCE per session on first escalation
+        if (!hasAutoOpenedDetails) {
+          setIsDetailsOpen(true);
+          setHasAutoOpenedDetails(true);
+        }
       }
 
       const agentMsg: ChatMessage = {
@@ -178,7 +209,7 @@ export const App: React.FC = () => {
         onOpenAdmin={() => setIsAdminOpen(true)}
       />
 
-      <div className="main-content">
+      <div className="main-content" style={{ gridTemplateColumns: '1fr', padding: '16px max(16px, calc((100vw - 1100px) / 2))' }}>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
           <CustomerBanner
             customer={customer}
@@ -190,10 +221,16 @@ export const App: React.FC = () => {
             isLoading={isLoading}
             onSendMessage={handleSendMessage}
             quickPrompts={getQuickPrompts()}
+            onToggleDetails={() => setIsDetailsOpen((prev) => !prev)}
+            isDetailsOpen={isDetailsOpen}
+            actionsCount={actions.length}
+            escalationsCount={escalations.length}
           />
         </div>
 
         <ActionLogPanel
+          isOpen={isDetailsOpen}
+          onClose={() => setIsDetailsOpen(false)}
           actions={actions}
           escalations={escalations}
           customer={customer}

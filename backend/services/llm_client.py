@@ -179,12 +179,26 @@ class LLMClient:
         return self._build_structured_fallback_response(original_prompt)
 
     def _build_structured_fallback_response(self, prompt: str) -> str:
-        """Structured deterministic template response generated directly from node context."""
-        cust_match = re.search(r'CUSTOMER:\s*([^\n]+)', prompt)
-        flight_match = re.search(r'FLIGHT:\s*([^\n]+)', prompt)
+        """Build short, natural conversational language following 4-step support structure."""
+        cust_match = re.search(r'CUSTOMER:\s*([^\(\n]+)', prompt)
+        name_full = cust_match.group(1).strip() if cust_match else ""
+        first_name = name_full.split()[0] if name_full and name_full != "Customer" else ""
+
+        flight_match = re.search(r'FLIGHT:\s*([^\n|]+)', prompt)
+        flight_no = flight_match.group(1).strip() if flight_match else "your flight"
+
+        status_match = re.search(r'STATUS:\s*([^\n]+)', prompt)
+        status = status_match.group(1).strip() if status_match else ""
         
-        customer_line = cust_match.group(1) if cust_match else "valued customer"
-        flight_line = flight_match.group(1) if flight_match else "your flight"
+        delay_match = re.search(r'DELAY:\s*([\d\.]+)\s*hours', prompt)
+        delay_h = delay_match.group(1) if delay_match else None
+
+        msg_match = re.search(r'CUSTOMER MESSAGE:\s*"([^"]+)"', prompt)
+        cust_msg = msg_match.group(1).lower() if msg_match else ""
+
+        # Small talk / gratitude check
+        if any(w in cust_msg for w in ["thank", "thanks", "ok", "okay", "great", "bye"]) and len(cust_msg.split()) < 5:
+            return f"You're very welcome{' ' + first_name if first_name else ''}! Please let me know if there's anything else I can help you with regarding your flight."
 
         # Parse actions taken
         actions_section = ""
@@ -204,47 +218,62 @@ class LLMClient:
         if esc_match:
             escalations_section = esc_match.group(1).strip()
 
-        parts = [
-            f"Dear {customer_line},\n\nWe sincerely apologize for the inconvenience regarding {flight_line}."
-        ]
-
+        action_phrases = []
         if actions_section and "(none)" not in actions_section:
-            parts.append("We have processed the following for your disruption resolution:")
             for line in actions_section.split("\n"):
                 line_str = line.strip()
-                if line_str and not line_str.startswith("(none)"):
-                    if "full_refund_offered" in line_str:
-                        parts.append("• Full refund offer to your original payment method within 7 business days.")
-                    elif "free_rebook_offered" in line_str:
-                        parts.append("• Free rebooking option on the next available flight within 24 hours.")
-                    elif "meal_voucher" in line_str:
-                        parts.append("• ₹500 Meal Voucher issued.")
-                    elif "lounge_access" in line_str:
-                        parts.append("• Airport Lounge Access pass granted.")
-                    elif "hotel" in line_str:
-                        parts.append("• Hotel accommodation provided for the delayed-hours period.")
-                    elif "fare_difference_waived" in line_str:
-                        parts.append("• Voluntary rebooking fare difference waived per policy.")
-                    else:
-                        parts.append(f"• {line_str.lstrip('- ')}")
+                if not line_str or line_str.startswith("(none)"):
+                    continue
+                if "full_refund_offered" in line_str:
+                    action_phrases.append("processed a full refund offer to your original payment method")
+                elif "free_rebook_offered" in line_str:
+                    action_phrases.append("arranged a free rebooking option on the next available flight")
+                elif "meal_voucher" in line_str:
+                    action_phrases.append("issued a ₹500 meal voucher")
+                elif "lounge_access" in line_str:
+                    action_phrases.append("granted airport lounge access")
+                elif "hotel" in line_str:
+                    action_phrases.append("provided hotel coverage for the delayed hours")
+                elif "fare_difference_waived" in line_str:
+                    action_phrases.append("waived the fare difference for your flight change")
+
+        sentences = []
+
+        # 1. Empathize & State Findings
+        greeting_name = f", {first_name}" if first_name else ""
+        if status == "CANCELLED":
+            sentences.append(f"I'm really sorry to hear about the cancellation of flight {flight_no}{greeting_name}.")
+        elif delay_h:
+            sentences.append(f"I'm really sorry about the {delay_h}-hour delay on flight {flight_no}{greeting_name} — that's a long wait.")
+        else:
+            sentences.append(f"I completely understand your concern regarding flight {flight_no}{greeting_name}.")
+
+        # 2. State Actions Taken / Options
+        if action_phrases:
+            if len(action_phrases) == 1:
+                sentences.append(f"I've {action_phrases[0]} for your booking.")
+            elif len(action_phrases) == 2:
+                sentences.append(f"I've {action_phrases[0]} and {action_phrases[1]}.")
+            else:
+                joined = ", ".join(action_phrases[:-1]) + f", and {action_phrases[-1]}"
+                sentences.append(f"I've {joined}.")
+        elif status == "CANCELLED":
+            sentences.append("I can process a full refund to your original payment method or rebook you on the next available flight at no extra cost. Which would you prefer?")
+
+        # 3. Declined & Escalations (conversational plain language)
+        if escalations_section and "(none)" not in escalations_section:
+            if "full night" in escalations_section.lower() or "hotel" in escalations_section.lower():
+                sentences.append("A full night's stay isn't something I'm able to approve directly, so I've flagged that for a supervisor to review with you.")
+            elif "different payment" in escalations_section.lower() or "payment method" in escalations_section.lower():
+                sentences.append("Refunding to a different payment method requires secondary review, so I've escalated your request to a supervisor.")
+            else:
+                sentences.append("Your request requires specialist review, so I've flagged it for a supervisor to follow up with you directly.")
 
         if declined_section and "(none)" not in declined_section:
-            parts.append("\nRegarding your additional inquiries:")
-            for line in declined_section.split("\n"):
-                line_str = line.strip()
-                if line_str and not line_str.startswith("(none)"):
-                    parts.append(f"• {line_str.lstrip('- ')}")
+            if "policy" in declined_section.lower() or "limit" in declined_section.lower():
+                sentences.append("Please note that additional compensation beyond our standard delay policy cannot be applied automatically.")
 
-        if escalations_section and "(none)" not in escalations_section:
-            parts.append("\nHuman Supervisor Review Flagged:")
-            for line in escalations_section.split("\n"):
-                line_str = line.strip()
-                if line_str and not line_str.startswith("(none)"):
-                    parts.append(f"• Escalated: {line_str.lstrip('- ')}")
-            parts.append("A human customer supervisor has been notified and will contact you directly regarding these escalated items.")
-
-        parts.append("\nThank you for your patience with AIONOS SkyAssist.")
-        return "\n".join(parts)
+        return " ".join(sentences)
 
 
 # ── Test mock ─────────────────────────────────────────────────────────────────
