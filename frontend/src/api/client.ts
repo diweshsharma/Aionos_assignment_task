@@ -1,6 +1,16 @@
 import type { ChatResponse, Customer, Booking } from '../types';
 
-const BASE_URL = 'http://localhost:8000';
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'http://localhost:8000';
+  }
+  return 'https://aionos-backend.onrender.com';
+};
+
+const BASE_URL = getApiBaseUrl();
 let authToken = 'dev_secret_token_123'; // Matches AUTH_TOKEN in .env
 
 export const setAuthToken = (token: string) => {
