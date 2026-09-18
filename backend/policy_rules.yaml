@@ -1,0 +1,38 @@
+# ── Delay compensation tiers ──────────────────────────────────────────────────
+# Evaluated in order; first tier whose max_hours > delay_hours wins.
+# max_hours: null means "no upper bound" (catches everything above the prior tier).
+delay_tiers:
+  - max_hours: 3
+    benefits:
+      - meal_voucher_500
+  - max_hours: 5
+    benefits:
+      - meal_voucher_500
+      - lounge_access
+  - max_hours: null          # delay >= 5 h
+    benefits:
+      - meal_voucher_500
+      - lounge_access
+      - hotel_delayed_hours  # hotel for the delayed-hours portion only, NOT a full night
+
+# ── Fare-difference waiver authority ─────────────────────────────────────────
+# Agents may waive up to this amount (INR) for voluntary higher-fare rebooks.
+# Any request above this limit MUST be escalated to a supervisor.
+fare_waiver_limit_inr: 1500
+
+# ── Cancellation rebooking window ────────────────────────────────────────────
+# Airline-cancelled flights: customer may rebook free-of-charge on the next
+# available flight departing within this many hours of original departure.
+cancellation_rebook_window_hours: 24
+
+# ── Refund processing time ───────────────────────────────────────────────────
+# Full refunds are processed to the ORIGINAL payment method only,
+# within this many business days.
+refund_processing_days: 7
+
+# ── Loyalty priority tiers ───────────────────────────────────────────────────
+# Members of these tiers receive priority rebooking queue placement.
+# No additional monetary compensation is granted solely on tier status.
+loyalty_priority_tiers:
+  - Gold
+  - Platinum
