@@ -2,7 +2,7 @@ services:
   # ── Backend Web Service (FastAPI) ──────────────────────────────────────────
   - type: web
     name: aionos-backend
-    runtime: python
+    env: python
     region: oregon
     plan: free
     buildCommand: cd backend && pip install -r requirements.txt && python seed.py
@@ -16,18 +16,12 @@ services:
         sync: false
 
   # ── Frontend Static Site (React Vite) ──────────────────────────────────────
-  - type: static
+  - type: web
     name: aionos-frontend
-    runtime: static
+    env: static
     region: oregon
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: ./frontend/dist
-    envVars:
-      - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: aionos-backend
-          property: host
     routes:
       - type: rewrite
         source: /*
