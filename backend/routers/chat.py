@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from database import get_db
 from schemas.chat import ChatRequest, ChatResponse, ActionDetail, ConversationOut, ConversationTurnOut
-from services.booking_service import get_conversations_by_customer, get_customer_by_pnr
+from services.booking_service import get_conversations_by_customer
 from routers.deps import require_auth
 
 router = APIRouter(tags=["chat"])
@@ -25,8 +25,8 @@ def chat(
     db=Depends(get_db),
 ):
     """
-    Main chat endpoint.  Invokes the LangGraph agent and returns the response,
-    the list of actions taken, and any escalation reasons.
+    Main chat endpoint. Invokes the LangGraph agent and returns the response,
+    the list of actions taken, customer/booking metadata, and escalation reasons.
     """
     graph = request.app.state.graph
 
@@ -55,15 +55,44 @@ def chat(
         )
 
     actions = [
-        ActionDetail(type=a["type"], details=a.get("details", {}))
+        ActionDetail(type=a["type"], details=a.get("details", {}), escalated=a.get("escalated", False))
         for a in final_state.get("actions_taken", [])
     ]
 
+    escalations_raw = final_state.get("escalations", [])
+    escalations_formatted = [
+        {"reason": e} if isinstance(e, str) else e
+        for e in escalations_raw
+    ]
+
+    resp_text = final_state.get("response") or final_state.get("error") or "No response generated."
+
+    customer = final_state.get("customer")
+    booking = final_state.get("booking")
+
+    # Format intents list for UI display
+    raw_intents = final_state.get("intents") or {}
+    intents_list = [k for k, v in raw_intents.items() if v is True]
+    if raw_intents.get("extra_compensation_asks"):
+        intents_list.extend(raw_intents["extra_compensation_asks"])
+
+    # Extract policy cites for UI box
+    policy_context = final_state.get("policy_context") or ""
+    policy_cites = [line.strip() for line in policy_context.split("\n\n") if line.strip()]
+
     return ChatResponse(
-        response=final_state.get("response") or "No response generated.",
+        reply=resp_text,
+        response=resp_text,
+        pnr=body.pnr,
+        customer_name=customer.get("name") if customer else None,
         actions=actions,
-        escalations=final_state.get("escalations", []),
+        actions_taken=actions,
+        escalations=escalations_formatted,
         conversation_id=final_state.get("conversation_id"),
+        customer_info=customer,
+        booking_info=booking,
+        intents=intents_list,
+        policy_cites=policy_cites,
     )
 
 

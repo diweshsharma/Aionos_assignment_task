@@ -1,7 +1,7 @@
 """Pydantic schemas for chat API."""
 
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, Any
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
@@ -13,13 +13,26 @@ class ChatRequest(BaseModel):
 class ActionDetail(BaseModel):
     type: str
     details: dict = {}
+    escalated: bool = False
+
+
+class EscalationDetail(BaseModel):
+    reason: str
 
 
 class ChatResponse(BaseModel):
+    reply: str
     response: str
+    pnr: str = ""
+    customer_name: Optional[str] = None
     actions: list[ActionDetail] = []
-    escalations: list[str] = []
+    actions_taken: list[ActionDetail] = []
+    escalations: list[Any] = []
     conversation_id: Optional[int] = None
+    customer_info: Optional[dict] = None
+    booking_info: Optional[dict] = None
+    intents: list[str] = []
+    policy_cites: list[str] = []
 
 
 class ConversationTurnOut(BaseModel):
